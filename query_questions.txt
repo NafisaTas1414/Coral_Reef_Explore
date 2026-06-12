@@ -46,10 +46,6 @@ Disclaimers:
  
 
 
-2. Abundance decline — total organismQuantity per region per year (are corals getting fewer?)
-
-output:
-
 3. Steepest decline by region — compare each region's first survey vs most recent survey (Nafisa)
 
 Input:
@@ -106,6 +102,53 @@ Disclaimers:
 5. Absence rate over time — what percentage of observations were recorded as "absent" per region per year, and is that percentage increasing?
 
 6. Most at-risk species — which species showed the greatest drop in total abundance (organismQuantity) between the first and last survey years? (Nafisa)
+
+Input:
+
+db.occurrences.aggregate([
+  { $match: { occurrenceStatus: "present", organismQuantity: { $gt: 0 } }},
+  // Sum total abundance per species per year
+  { $group: {
+      _id: { species: "$scientificName", year: { $year: "$eventDate" } },
+      totalAbundance: { $sum: "$organismQuantity" }
+  }},
+  { $sort: { "_id.year": 1 }},
+  // Get first and last year totals per species
+  { $group: {
+      _id: "$_id.species",
+      firstYear: { $first: "$_id.year" },
+      firstAbundance: { $first: "$totalAbundance" },
+      lastYear: { $last: "$_id.year" },
+      lastAbundance: { $last: "$totalAbundance" }
+  }},
+  // Calculate the drop (negative = decline)
+  { $project: {
+      species: "$_id",
+      firstYear: 1, firstAbundance: 1,
+      lastYear: 1,  lastAbundance: 1,
+      change: { $subtract: ["$lastAbundance", "$firstAbundance"] }
+  }},
+  { $sort: { change: 1 }},
+  { $limit: 10 }
+])
+
+Output (top 10 most declined):
+
+  { species: 'Porites astreoides',      firstYear: 2013, firstAbundance: 2848, lastYear: 2024, lastAbundance:  660, change: -2188 }
+  { species: 'Siderastrea siderea',     firstYear: 2013, firstAbundance: 1603, lastYear: 2024, lastAbundance:   12, change: -1591 }
+  { species: 'Agaricia agaricites',     firstYear: 2013, firstAbundance: 1264, lastYear: 2024, lastAbundance:  154, change: -1110 }
+  { species: 'Orbicella faveolata',     firstYear: 2013, firstAbundance:  616, lastYear: 2024, lastAbundance:   59, change:  -557 }
+  { species: 'Orbicella franksi',       firstYear: 2013, firstAbundance:  782, lastYear: 2024, lastAbundance:  244, change:  -538 }
+  { species: 'Montastraea cavernosa',   firstYear: 2013, firstAbundance:  592, lastYear: 2024, lastAbundance:  107, change:  -485 }
+  { species: 'Porites porites',         firstYear: 2013, firstAbundance:  471, lastYear: 2024, lastAbundance:   19, change:  -452 }
+  { species: 'Orbicella annularis',     firstYear: 2013, firstAbundance:  298, lastYear: 2024, lastAbundance:    1, change:  -297 }
+  { species: 'Stephanocoenia intersepta',firstYear: 2013, firstAbundance: 296, lastYear: 2024, lastAbundance:   75, change:  -221 }
+  { species: 'Pseudodiploria strigosa', firstYear: 2013, firstAbundance:  413, lastYear: 2024, lastAbundance:  214, change:  -199 }
+
+Disclaimers:
+  - 2024 is an incomplete survey year — last year values for species may be understated
+  - Porites astreoides is the most at-risk with a drop of 2,188 individuals
+  - Orbicella annularis is near collapse because it is down from 298 to just 1 individual recorded
 
 7. Depth and decline — do coral observations at deeper depths show less decline than shallow water corals, suggesting shallow reefs are more affected? (Nafisa)
 
