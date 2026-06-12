@@ -1,18 +1,105 @@
 Query Questions - Coral Reef Investigation
 Has coral species declined across the US reef regions from 2013 through 2024?
 
-1. Species richness over time — how many distinct species were observed per region per year? (Nafisa)
+change the questions for the queries as u like anushka, I just put some down but change
+as needed!
+
+1. How many distinct/unique coral species were observed across all US reef regions per year? (Nafisa)
+
 Input:
-`
-output:
+
+db.occurrences.aggregate([
+  // Only count corals that were actually seen
+  { $match: { occurrenceStatus: "present" }},
+  // Group by year, collecting all unique species names (no duplicates)
+  { $group: {
+      _id: { $year: "$eventDate" },
+      distinctSpecies: { $addToSet: "$scientificName" }
+  }},
+  // Count the unique species per year
+  { $project: {
+      year: "$_id",
+      totalSpecies: { $size: "$distinctSpecies" }
+  }},
+  { $sort: { year: 1 } }
+])
+
+Output:
+
+  { year: 2013, totalSpecies: 44 }
+  { year: 2014, totalSpecies: 49 }
+  { year: 2015, totalSpecies: 51 }
+  { year: 2016, totalSpecies: 45 }
+  { year: 2017, totalSpecies: 50 }
+  { year: 2018, totalSpecies: 43 }
+  { year: 2019, totalSpecies: 49 }
+  { year: 2020, totalSpecies: 28 }
+  { year: 2021, totalSpecies: 49 }
+  { year: 2022, totalSpecies: 46 }
+  { year: 2023, totalSpecies: 48 }
+  { year: 2024, totalSpecies: 19 } // not full year
+
+Disclaimers:
+  - Not all regions were surveyed every year — years with fewer regions will naturally show fewer species
+  - 2020 drop to 28 species is likely due to reduced surveys during COVID, not actual species loss
+  - 2024 is an incomplete year (only 722 records) so 19 species is not representative
+ 
+
 
 2. Abundance decline — total organismQuantity per region per year (are corals getting fewer?)
 
 output:
 
-3. Steepest decline by region — compare 2013 start vs 2023/2024 end per region (Nafisa)
+3. Steepest decline by region — compare each region's first survey vs most recent survey (Nafisa)
 
-output:
+Input:
+
+db.occurrences.aggregate([
+  { $match: { occurrenceStatus: "present" }},
+  // Get distinct species per region per year
+  { $group: {
+      _id: { region: "$locality", year: { $year: "$eventDate" } },
+      distinctSpecies: { $addToSet: "$scientificName" }
+  }},
+  { $project: {
+      region: "$_id.region",
+      year: "$_id.year",
+      speciesCount: { $size: "$distinctSpecies" }
+  }},
+  { $sort: { year: 1 }},
+  // For each region grab first and last survey year counts
+  { $group: {
+      _id: "$region",
+      firstYear: { $first: "$year" },
+      firstCount: { $first: "$speciesCount" },
+      lastYear: { $last: "$year" },
+      lastCount: { $last: "$speciesCount" }
+  }},
+  // Calculate the change (negative = decline)
+  { $project: {
+      region: "$_id",
+      firstYear: 1, firstCount: 1,
+      lastYear: 1,  lastCount: 1,
+      change: { $subtract: ["$lastCount", "$firstCount"] }
+  }},
+  { $sort: { change: 1 }}  // most declined first
+])
+
+Output:
+
+  { region: 'St. Croix, US Virgin Islands',              firstYear: 2015, firstCount: 42, lastYear: 2023, lastCount: 36, change: -6 }
+  { region: 'Puerto Rico',                               firstYear: 2014, firstCount: 44, lastYear: 2023, lastCount: 41, change: -3 }
+  { region: 'Dry Tortugas, Florida',                     firstYear: 2014, firstCount: 35, lastYear: 2022, lastCount: 32, change: -3 }
+  { region: 'St. Thomas and St. John, US Virgin Islands',firstYear: 2013, firstCount: 43, lastYear: 2023, lastCount: 43, change:  0 }
+  { region: 'Flower Garden Banks, Gulf of Mexico',       firstYear: 2013, firstCount: 19, lastYear: 2024, lastCount: 19, change:  0 }
+  { region: 'Southeast Florida',                         firstYear: 2014, firstCount: 24, lastYear: 2022, lastCount: 26, change: +2 }
+  { region: 'Florida Keys, Florida',                     firstYear: 2014, firstCount: 34, lastYear: 2022, lastCount: 41, change: +7 }
+
+Disclaimers:
+  - Each region is compared on its own first vs last survey year, not the same calendar years
+  - St. Croix saw the steepest decline (-6 species), followed by Puerto Rico and Dry Tortugas (-3 each)
+  - Florida Keys actually gained 7 species — suggesting recovery or improved survey coverage
+  - Flower Garden Banks last survey is 2024 which is incomplete, so change: 0 may not be accurate
 
 4. Species that disappeared — species present in 2013-2015 but absent by 2022-2024
 
