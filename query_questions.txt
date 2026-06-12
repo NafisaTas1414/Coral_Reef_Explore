@@ -152,4 +152,41 @@ Disclaimers:
 
 7. Depth and decline — do coral observations at deeper depths show less decline than shallow water corals, suggesting shallow reefs are more affected? (Nafisa)
 
+db.occurrences.aggregate([
+  { $match: { occurrenceStatus: "present", organismQuantity: { $gt: 0 } }},
+  { $group: {
+      _id: {
+        depthBand: {
+          $switch: {
+            branches: [
+              { case: { $lt: ["$minimumDepthInMeters", 10] }, then: "Shallow (0-10m)" },
+              { case: { $lt: ["$minimumDepthInMeters", 20] }, then: "Mid (10-20m)" }
+            ], default: "Deep (20m+)"}},
+        year: { $year: "$eventDate" }},
+      totalAbundance: { $sum: "$organismQuantity" }}},
+  { $sort: { "_id.year": 1, "_id.depthBand": 1 } }
+])
+
+output:
+
+ { _id: { depthBand: 'Deep (20m+)', year: 2013 }, totalAbundance: 3462 },
+  {
+    _id: { depthBand: 'Mid (10-20m)', year: 2013 },
+    totalAbundance: 3420
+  },
+  {
+    _id: { depthBand: 'Shallow (0-10m)', year: 2013 },
+    totalAbundance: 3566
+  },
+  { _id: { depthBand: 'Deep (20m+)', year: 2014 }, totalAbundance: 2614 },
+  {
+    _id: { depthBand: 'Mid (10-20m)', year: 2014 },
+    totalAbundance: 5475
+  },
+  {
+    _id: { depthBand: 'Shallow (0-10m)', year: 2014 },
+    totalAbundance: 10060
+  }...
+
+
 8. Recovery signals — are there any regions or species that show an increase in abundance after a period of decline, suggesting signs of reef recovery?
