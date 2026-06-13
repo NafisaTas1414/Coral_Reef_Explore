@@ -8,29 +8,98 @@ client = MongoClient("mongodb://localhost:27017/")
 collection = client["coral_reef"]["occurrences"]
 
 
-# Q1: Distinct species per year 
+# Q1: Species Winners vs Losers
 
-q1 = collection.aggregate([
-    { "$match": { "occurrenceStatus": "present" }},
-    { "$group": { "_id": { "$year": "$eventDate" }, "distinctSpecies": { "$addToSet": "$scientificName" }
-    }},{ "$project": { "year": "$_id", "totalSpecies": { "$size": "$distinctSpecies" } }},
-    { "$sort": { "year": 1 } }
+def get_winners_losers(sort_order, limit=10):
+    return list(collection.aggregate([
+        { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 } }},
+        { "$group": {
+            "_id": { "species": "$scientificName", "year": { "$year": "$eventDate" } },
+            "totalAbundance": { "$sum": "$organismQuantity" }
+        }},
+        { "$sort": { "_id.year": 1 }},
+        { "$group": {
+            "_id": "$_id.species",
+            "firstAbundance": { "$first": "$totalAbundance" },
+            "lastAbundance":  { "$last": "$totalAbundance" }
+        }},
+        { "$project": {
+            "species": "$_id",
+            "firstAbundance": 1, "lastAbundance": 1,
+            "change": { "$subtract": ["$lastAbundance", "$firstAbundance"] }
+        }},
+        { "$sort": { "change": sort_order }},
+        { "$limit": limit }
+    ]))
+
+winners = pd.DataFrame(get_winners_losers(sort_order=-1))
+losers  = pd.DataFrame(get_winners_losers(sort_order=1))
+
+fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(16, 7))
+
+# Winners — left panel
+ax_left.barh(winners["species"], winners["change"], color="#2ca02c")
+ax_left.set_title("Coral Species on the Rise\n(Top 10 Growing Species)", fontsize=12)
+ax_left.set_xlabel("Increase in Individual Corals Counted")
+ax_left.invert_yaxis()
+for spine in ["top", "right"]: ax_left.spines[spine].set_visible(False)
+
+# Losers — right panel
+ax_right.barh(losers["species"], losers["change"], color="#d62728")
+ax_right.set_title("Coral Species in Decline\n(Top 10 Shrinking Species)", fontsize=12)
+ax_right.set_xlabel("Decrease in Individual Corals Counted")
+ax_right.invert_yaxis()
+for spine in ["top", "right"]: ax_right.spines[spine].set_visible(False)
+
+fig.suptitle("Which Coral Species Are Thriving and Which Are Disappearing? (First vs Most Recent Survey)", fontsize=13, fontweight="bold")
+plt.tight_layout()
+plt.savefig("q1_winners_vs_losers.png")
+plt.show()
+print("Saved: q1_winners_vs_losers.png")
+
+
+# Q6: Geographic fragmentation — are corals found in fewer locations over time?
+
+q6_geo = collection.aggregate([
+    { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 } }},
+    { "$group": {
+        "_id": { "$year": "$eventDate" },
+        "uniqueLocations": { "$addToSet": {
+            "lat": { "$round": ["$decimalLatitude", 1] },
+            "lng": { "$round": ["$decimalLongitude", 1] }
+        }},
+        "allLats": { "$push": "$decimalLatitude" },
+        "allLngs": { "$push": "$decimalLongitude" }
+    }},
+    { "$project": {
+        "year": "$_id",
+        "uniqueLocationCount": { "$size": "$uniqueLocations" },
+        "latSpread": { "$subtract": [{ "$max": "$allLats" }, { "$min": "$allLats" }] },
+        "lngSpread": { "$subtract": [{ "$max": "$allLngs" }, { "$min": "$allLngs" }] }
+    }},
+    { "$sort": { "year": 1 }}
 ])
 
-df_q1 = pd.DataFrame(q1)
-df_q1 = df_q1[df_q1["year"] != 2024]
+df_geo = pd.DataFrame(q6_geo)
+df_geo = df_geo[~df_geo["year"].isin([2020, 2024])]
 
-plt.figure(figsize=(10, 5))
-plt.plot(df_q1["year"], df_q1["totalSpecies"], marker="o", color="steelblue", linewidth=2)
-plt.title("Distinct Coral Species Observed Per Year (All US Regions)", fontsize=13)
-plt.xlabel("Year")
-plt.ylabel("Number of Distinct Species")
-plt.xticks(df_q1["year"])
-plt.grid(axis="y", linestyle="--", alpha=0.5)
+fig, ax = plt.subplots(figsize=(11, 5))
+
+colors_bar = ["#d62728" if y >= 2014 and y <= 2017 else "#4682b4" for y in df_geo["year"]]
+ax.bar(df_geo["year"], df_geo["uniqueLocationCount"], color=colors_bar)
+ax.set_title("Are Coral Populations Shrinking Geographically Over Time?", fontsize=13, fontweight="bold")
+ax.set_xlabel("Year")
+ax.set_ylabel("Number of Unique Survey Locations With Coral Present")
+ax.set_xticks(df_geo["year"])
+ax.tick_params(axis="x", rotation=45)
+ax.axvspan(2013.5, 2017.5, color="coral", alpha=0.15, label="Bleaching Event (2014–2017)")
+ax.legend(fontsize=9)
+for spine in ["top", "right"]: ax.spines[spine].set_visible(False)
+
 plt.tight_layout()
-plt.savefig("q1_species_per_year.png")
+plt.savefig("q6_geographic_fragmentation.png")
 plt.show()
-print("Saved: q1_species_per_year.png")
+print("Saved: q6_geographic_fragmentation.png")
 
 
 # Q3: Steepest decline by region

@@ -6,45 +6,51 @@ about the long-term impact of climate-driven stressors on reef ecosystems?
 change the questions for the queries as u like anushka, I just put some down but change
 as needed!
 
-1. How many distinct/unique coral species were observed across all US reef regions per year? (Nafisa)
+1. Which coral species are winners vs losers — which grew in abundance and which declined the most? (Nafisa)
 
 Input:
 
 db.occurrences.aggregate([
-  // Only count corals that were actually seen
-  { $match: { occurrenceStatus: "present" }},
-  // Group by year, collecting all unique species names (no duplicates)
+  { $match: { occurrenceStatus: "present", organismQuantity: { $gt: 0 } }},
+  // Sum abundance per species per year
   { $group: {
-      _id: { $year: "$eventDate" },
-      distinctSpecies: { $addToSet: "$scientificName" }
+      _id: { species: "$scientificName", year: { $year: "$eventDate" } },
+      totalAbundance: { $sum: "$organismQuantity" }
   }},
-  // Count the unique species per year
+  { $sort: { "_id.year": 1 }},
+  // Get first and last year totals per species
+  { $group: {
+      _id: "$_id.species",
+      firstAbundance: { $first: "$totalAbundance" },
+      lastAbundance:  { $last: "$totalAbundance" }
+  }},
+  // Calculate change — positive = winner, negative = loser
   { $project: {
-      year: "$_id",
-      totalSpecies: { $size: "$distinctSpecies" }
+      species: "$_id",
+      firstAbundance: 1, lastAbundance: 1,
+      change: { $subtract: ["$lastAbundance", "$firstAbundance"] }
   }},
-  { $sort: { year: 1 } }
+  { $sort: { change: -1 }},  // flip to 1 for biggest losers
+  { $limit: 10 }
 ])
 
-Output:
+Output (Top 10 Winners):
 
-  { year: 2013, totalSpecies: 44 }
-  { year: 2014, totalSpecies: 49 }
-  { year: 2015, totalSpecies: 51 }
-  { year: 2016, totalSpecies: 45 }
-  { year: 2017, totalSpecies: 50 }
-  { year: 2018, totalSpecies: 43 }
-  { year: 2019, totalSpecies: 49 }
-  { year: 2020, totalSpecies: 28 }
-  { year: 2021, totalSpecies: 49 }
-  { year: 2022, totalSpecies: 46 }
-  { year: 2023, totalSpecies: 48 }
-  { year: 2024, totalSpecies: 19 } // not full year
+  { species: 'Siderastrea radians',    firstAbundance:  123, lastAbundance: 356, change: +233 }
+  { species: 'Porites furcata',        firstAbundance:   59, lastAbundance: 258, change: +199 }
+  { species: 'Porites divaricata',     firstAbundance:   32, lastAbundance: 210, change: +178 }
+  { species: 'Helioseris cucullata',   firstAbundance:   21, lastAbundance:  94, change:  +73 }
+  { species: 'Solenastrea bournoni',   firstAbundance:    1, lastAbundance:  68, change:  +67 }
+  { species: 'Pseudodiploria clivosa', firstAbundance:   21, lastAbundance:  59, change:  +38 }
+  { species: 'Acropora cervicornis',   firstAbundance:   17, lastAbundance:  50, change:  +33 }
+  { species: 'Agaricia grahamae',      firstAbundance:   28, lastAbundance:  56, change:  +28 }
+  { species: 'Madracis formosa',       firstAbundance:    4, lastAbundance:  28, change:  +24 }
+  { species: 'Porites branneri',       firstAbundance:    2, lastAbundance:  22, change:  +20 }
 
 Disclaimers:
-  - Not all regions were surveyed every year — years with fewer regions will naturally show fewer species
-  - 2020 drop to 28 species is likely due to reduced surveys during COVID, not actual species loss
-  - 2024 is an incomplete year (only 722 records) so 19 species is not representative
+  - Winners are species whose total abundance increased between first and last survey year
+  - Small starting abundances can produce large % gains — context matters
+  - Acropora cervicornis appearing as a winner is notable as it is a critically endangered species
  
 
 
