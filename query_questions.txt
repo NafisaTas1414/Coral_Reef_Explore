@@ -1,5 +1,7 @@
 Query Questions - Coral Reef Investigation
-Has coral species declined across the US reef regions from 2013 through 2024?
+How have coral species richness and abundance changed across US 
+reef regions from 2013 to 2024, and what do these trends reveal 
+about the long-term impact of climate-driven stressors on reef ecosystems?
 
 change the questions for the queries as u like anushka, I just put some down but change
 as needed!
@@ -190,3 +192,46 @@ output:
 
 
 8. Recovery signals — are there any regions or species that show an increase in abundance after a period of decline, suggesting signs of reef recovery?
+
+9. Impact of the 3rd Global Coral Bleaching Event (2014-2017) — did species richness and total abundance drop during the bleaching period compared to before and after? (Nafisa)
+
+Context: NOAA confirmed the Third Global Bleaching Event ran from 2014-2017, driven by rising ocean temperatures. This was the longest and most widespread bleaching event on record at the time.
+
+  Periods:
+  - Before:  2013          (baseline)
+  - During:  2014 – 2017   (bleaching event)
+  - After:   2018 – 2019   (recovery window)
+
+Input:
+
+db.occurrences.aggregate([
+  { $match: { occurrenceStatus: "present",
+      eventDate: { $gte: ISODate("2013-01-01"), $lte: ISODate("2019-12-31") }
+  }},
+  { $group: {
+      _id: { $year: "$eventDate" },
+      distinctSpecies: { $addToSet: "$scientificName" },
+      totalAbundance: { $sum: "$organismQuantity" }
+  }},
+  { $project: {
+      year: "$_id",
+      speciesCount: { $size: "$distinctSpecies" },
+      totalAbundance: 1
+  }},
+  { $sort: { year: 1 }}
+])
+
+Output:
+
+  { year: 2013, speciesCount: 44, totalAbundance: 10448 }   baseline
+  { year: 2014, speciesCount: 49, totalAbundance: 18149 }   bleaching begins
+  { year: 2015, speciesCount: 51, totalAbundance: 17805 }
+  { year: 2016, speciesCount: 45, totalAbundance: 11796 }   mid-event drop
+  { year: 2017, speciesCount: 50, totalAbundance: 18219 }
+  { year: 2018, speciesCount: 43, totalAbundance: 12193 }   post-bleaching
+  { year: 2019, speciesCount: 49, totalAbundance: 20899 }  ←partial recovery
+
+Disclaimers:
+  - Not all regions are surveyed every year so raw numbers vary
+  - 2016 shows the clearest drop in both species count and abundance during the bleaching window
+  - Abundance in 2018 is lower than baseline 2013 — suggesting incomplete recovery

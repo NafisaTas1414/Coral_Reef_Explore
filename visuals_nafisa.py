@@ -12,15 +12,13 @@ collection = client["coral_reef"]["occurrences"]
 
 q1 = collection.aggregate([
     { "$match": { "occurrenceStatus": "present" }},
-    { "$group": {
-        "_id": { "$year": "$eventDate" },
-        "distinctSpecies": { "$addToSet": "$scientificName" }
-    }},
-    { "$project": { "year": "$_id", "totalSpecies": { "$size": "$distinctSpecies" } }},
+    { "$group": { "_id": { "$year": "$eventDate" }, "distinctSpecies": { "$addToSet": "$scientificName" }
+    }},{ "$project": { "year": "$_id", "totalSpecies": { "$size": "$distinctSpecies" } }},
     { "$sort": { "year": 1 } }
 ])
 
 df_q1 = pd.DataFrame(q1)
+df_q1 = df_q1[df_q1["year"] != 2024]
 
 plt.figure(figsize=(10, 5))
 plt.plot(df_q1["year"], df_q1["totalSpecies"], marker="o", color="steelblue", linewidth=2)
@@ -48,12 +46,10 @@ q3 = collection.aggregate([
     { "$group": {
         "_id": "$region",
         "firstCount": { "$first": "$speciesCount" },
-        "lastCount":  { "$last": "$speciesCount" }
-    }},
+        "lastCount":  { "$last": "$speciesCount" }  }},
     { "$project": {
         "region": "$_id",
-        "change": { "$subtract": ["$lastCount", "$firstCount"] }
-    }},
+        "change": { "$subtract": ["$lastCount", "$firstCount"] } }},
     { "$sort": { "change": 1 }}
 ])
 
@@ -83,15 +79,9 @@ q6 = collection.aggregate([
     }},
     { "$sort": { "_id.year": 1 }},
     { "$group": {
-        "_id": "$_id.species",
-        "firstAbundance": { "$first": "$totalAbundance" },
-        "lastAbundance":  { "$last": "$totalAbundance" }
+        "_id": "$_id.species", "firstAbundance": { "$first": "$totalAbundance" }, "lastAbundance":  { "$last": "$totalAbundance" }
     }},
-    { "$project": {
-        "species": "$_id",
-        "firstAbundance": 1,
-        "lastAbundance": 1,
-        "change": { "$subtract": ["$lastAbundance", "$firstAbundance"] }
+    { "$project": {"species": "$_id", "firstAbundance": 1, "lastAbundance": 1, "change": { "$subtract": ["$lastAbundance", "$firstAbundance"] }
     }},
     { "$sort": { "change": 1 }},
     { "$limit": 10 }
@@ -157,5 +147,53 @@ plt.tight_layout()
 plt.savefig("q7_depth_over_time.png")
 plt.show()
 print("Saved: q7_depth_over_time.png")
+
+
+# Q9: Impact of the 3rd Global Coral Bleaching Event (2014-2017)
+
+q9 = collection.aggregate([
+    { "$match": { "occurrenceStatus": "present",
+        "eventDate": { "$gte": __import__("datetime").datetime(2013,1,1), "$lte": __import__("datetime").datetime(2019,12,31) }
+    }},
+    { "$group": {
+        "_id": { "$year": "$eventDate" },
+        "distinctSpecies": { "$addToSet": "$scientificName" },
+        "totalAbundance":  { "$sum": "$organismQuantity" }
+    }},
+    { "$project": { "year": "$_id", "speciesCount": { "$size": "$distinctSpecies" }, "totalAbundance": 1 }},
+    { "$sort": { "year": 1 }}
+])
+
+df_q9 = pd.DataFrame(q9).sort_values("year")
+
+fig, ax1 = plt.subplots(figsize=(12, 6))
+
+# shaded bleaching window
+ax1.axvspan(2014, 2017, color="coral", alpha=0.25, label="Bleaching Event (2014–2017)")
+
+# line 1 — species count (left axis)
+ax1.plot(df_q9["year"], df_q9["speciesCount"], marker="o", color="darkred", linewidth=2, label="Distinct Species")
+ax1.set_xlabel("Year")
+ax1.set_ylabel("Number of Distinct Species", color="darkred")
+ax1.tick_params(axis="y", labelcolor="darkred")
+
+# line 2 — abundance (right axis)
+ax2 = ax1.twinx()
+ax2.plot(df_q9["year"], df_q9["totalAbundance"], marker="s", color="steelblue", linewidth=2, linestyle="--", label="Total Abundance")
+ax2.set_ylabel("Total Coral Abundance", color="steelblue")
+ax2.tick_params(axis="y", labelcolor="steelblue")
+
+# combine legends from both axes
+lines1, labels1 = ax1.get_legend_handles_labels()
+lines2, labels2 = ax2.get_legend_handles_labels()
+ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
+
+plt.title("3rd Global Coral Bleaching Event (2014–2017):\nImpact on Species Richness & Abundance", fontsize=13)
+ax1.set_xticks(df_q9["year"])
+
+plt.tight_layout()
+plt.savefig("q9_bleaching_event.png")
+plt.show()
+print("Saved: q9_bleaching_event.png")
 
 client.close()
