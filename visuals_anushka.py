@@ -7,8 +7,6 @@ client = MongoClient("mongodb://localhost:27017/")
 collection = client["coral_reef"]["occurrences"]
 
 
-# Q5: Absence rate per region per year (line chart)
-
 short = {
     "Florida Keys, Florida":                          "Florida Keys",
     "Southeast Florida":                              "SE Florida",
@@ -18,6 +16,9 @@ short = {
     "St. Thomas and St. John, US Virgin Islands":     "St. Thomas/John (USVI)",
     "Flower Garden Banks, Gulf of Mexico":            "Flower Garden Banks",
 }
+
+
+# Q5: Absence rate per region per year (line chart)
 
 q5 = collection.aggregate([
     { "$group": {
@@ -44,7 +45,7 @@ region_order  = list(short.values())
 colors_q5     = ["#8a1c1c","#c0392b","#e67e22","#2980b9","#148f77","#0d8b0d","#27ae60"]
 color_map     = dict(zip(region_order, colors_q5))
 
-plt.figure(figsize=(11, 12))
+plt.figure(figsize=(11, 5))
 for region in region_order:
     subset = pivot[pivot["region_short"] == region].sort_values("year")
     if subset.empty:
@@ -79,7 +80,6 @@ df_q8["region"] = df_q8["_id"].apply(lambda x: x["region"])
 df_q8["year"]   = df_q8["_id"].apply(lambda x: x["year"])
 df_q8 = df_q8[df_q8["year"] <= 2023]
 
-# get first and last year per region
 first = df_q8.groupby("region").first().reset_index()[["region","year","totalAbundance"]].rename(columns={"year":"firstYear","totalAbundance":"firstAb"})
 last  = df_q8.groupby("region").last().reset_index()[["region","year","totalAbundance"]].rename(columns={"year":"lastYear","totalAbundance":"lastAb"})
 df_fl = first.merge(last, on="region")
@@ -102,6 +102,7 @@ plt.tight_layout()
 plt.savefig("q8_recovery_signals.png")
 plt.show()
 print("Saved: q8_recovery_signals.png")
+
 
 # Q7: Coral abundance by depth band over time
 
@@ -172,7 +173,6 @@ results = collection.aggregate([
 df = pd.DataFrame(results)
 df = df[~df["year"].isin([2020, 2024])]
 
-# red bars for bleaching years, blue for others
 colors = ["#d62728" if 2014 <= y <= 2017 else "#4682b4" for y in df["year"]]
 
 fig, ax = plt.subplots(figsize=(11, 5))
@@ -182,12 +182,46 @@ ax.set_xlabel("Year")
 ax.set_ylabel("Number of Unique Survey Locations With Coral Present")
 ax.set_xticks(df["year"])
 ax.tick_params(axis="x", rotation=45)
-ax.axvspan(2013.5, 2017.5, color="coral", alpha=0.15, label="Bleaching Event (2014–2017)")
+ax.axvspan(2013.5, 2017.5, color="coral", alpha=0.15, label="Bleaching Event (2014-2017)")
 ax.legend(fontsize=9)
 plt.tight_layout()
 plt.savefig("q6_geographic_fragmentation.png")
 plt.show()
 print("Saved: q6_geographic_fragmentation.png")
+
+
+# Survey Effort: Number of observations per region per year
+
+q_survey = collection.aggregate([
+    { "$group": {
+        "_id": { "region": "$locality", "year": { "$year": "$eventDate" }},
+        "obsCount": { "$sum": 1 }
+    }},
+    { "$sort": { "_id.year": 1 }}
+])
+
+df_survey = pd.DataFrame(list(q_survey))
+df_survey["region"] = df_survey["_id"].apply(lambda x: x["region"])
+df_survey["year"]   = df_survey["_id"].apply(lambda x: x["year"])
+df_survey = df_survey[df_survey["year"] <= 2023]
+df_survey["region_short"] = df_survey["region"].map(short).fillna(df_survey["region"])
+
+pivot_survey = df_survey.pivot_table(index="year", columns="region_short", values="obsCount", fill_value=0)
+
+colors_survey = ["#8a1c1c","#c0392b","#e67e22","#2980b9","#148f77","#0d8b0d","#27ae60"]
+
+fig, ax = plt.subplots(figsize=(12, 6))
+pivot_survey.plot(kind="bar", stacked=True, ax=ax, color=colors_survey, width=0.7)
+ax.set_title("Survey Effort: Number of Observations per Region per Year", fontsize=13)
+ax.set_xlabel("Year")
+ax.set_ylabel("Number of Observations")
+ax.legend(fontsize=8, bbox_to_anchor=(1.01, 1), loc="upper left")
+ax.grid(axis="y", linestyle="--", alpha=0.5)
+plt.xticks(rotation=45)
+plt.tight_layout()
+plt.savefig("survey_effort.png")
+plt.show()
+print("Saved: survey_effort.png")
 
 
 client.close()
