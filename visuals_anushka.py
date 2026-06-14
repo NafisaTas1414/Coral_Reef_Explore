@@ -7,45 +7,17 @@ client = MongoClient("mongodb://localhost:27017/")
 collection = client["coral_reef"]["occurrences"]
 
 
-# Q4: Top 10 species by % abundance loss (first vs last survey year)
-
-q4 = collection.aggregate([
-    { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 }}},
-    { "$group": {
-        "_id": { "species": "$scientificName", "year": { "$year": "$eventDate" }},
-        "totalAbundance": { "$sum": "$organismQuantity" }
-    }},
-    { "$sort": { "_id.year": 1 }},
-    { "$group": {
-        "_id": "$_id.species",
-        "firstAbundance": { "$first": "$totalAbundance" },
-        "lastAbundance":  { "$last": "$totalAbundance" }
-    }}
-])
-
-df_q4 = pd.DataFrame(list(q4))
-df_q4["species"]  = df_q4["_id"]
-df_q4["pct_loss"] = ((df_q4["firstAbundance"] - df_q4["lastAbundance"]) / df_q4["firstAbundance"] * 100).round(1)
-df_q4 = df_q4[df_q4["pct_loss"] > 0].sort_values("pct_loss", ascending=False).head(10)
-df_q4 = df_q4.sort_values("pct_loss", ascending=True)
-
-plt.figure(figsize=(11, 6))
-bars = plt.barh(df_q4["species"], df_q4["pct_loss"], color="steelblue")
-for bar, val in zip(bars, df_q4["pct_loss"]):
-    plt.text(val + 0.5, bar.get_y() + bar.get_height() / 2,
-             f"{val:.1f}%", va="center", fontsize=9)
-plt.title("Top 10 Species by % Abundance Loss (First vs Most Recent Survey)", fontsize=13)
-plt.xlabel("% Decline in Abundance")
-plt.yticks(fontstyle="italic")
-plt.xlim(0, 115)
-plt.grid(axis="x", linestyle="--", alpha=0.5)
-plt.tight_layout()
-plt.savefig("q4_pct_loss_species.png")
-plt.show()
-print("Saved: q4_pct_loss_species.png")
-
-
 # Q5: Absence rate per region per year (line chart)
+
+short = {
+    "Florida Keys, Florida":                          "Florida Keys",
+    "Southeast Florida":                              "SE Florida",
+    "Dry Tortugas, Florida":                          "Dry Tortugas",
+    "Puerto Rico":                                    "Puerto Rico",
+    "St. Croix, US Virgin Islands":                   "St. Croix (USVI)",
+    "St. Thomas and St. John, US Virgin Islands":     "St. Thomas/John (USVI)",
+    "Flower Garden Banks, Gulf of Mexico":            "Flower Garden Banks",
+}
 
 q5 = collection.aggregate([
     { "$group": {
@@ -66,23 +38,13 @@ if "present" not in pivot.columns:
     pivot["present"] = 0
 pivot["absence_pct"] = (pivot["absent"] / (pivot["absent"] + pivot["present"]) * 100).round(1)
 pivot = pivot[pivot["year"] <= 2023]
-
-short = {
-    "Florida Keys, Florida":                          "Florida Keys",
-    "Southeast Florida":                              "SE Florida",
-    "Dry Tortugas, Florida":                          "Dry Tortugas",
-    "Puerto Rico":                                    "Puerto Rico",
-    "St. Croix, US Virgin Islands":                   "St. Croix (USVI)",
-    "St. Thomas and St. John, US Virgin Islands":     "St. Thomas/John (USVI)",
-    "Flower Garden Banks, Gulf of Mexico":            "Flower Garden Banks",
-}
 pivot["region_short"] = pivot["region"].map(short).fillna(pivot["region"])
 
 region_order  = list(short.values())
 colors_q5     = ["#8a1c1c","#c0392b","#e67e22","#2980b9","#148f77","#0d8b0d","#27ae60"]
 color_map     = dict(zip(region_order, colors_q5))
 
-plt.figure(figsize=(11, 5))
+plt.figure(figsize=(11, 12))
 for region in region_order:
     subset = pivot[pivot["region_short"] == region].sort_values("year")
     if subset.empty:
@@ -141,54 +103,52 @@ plt.savefig("q8_recovery_signals.png")
 plt.show()
 print("Saved: q8_recovery_signals.png")
 
+# Q7: Coral abundance by depth band over time
 
-# Q2: Species richness per region over time
-
-q2 = collection.aggregate([
-    { "$match": { "occurrenceStatus": "present" }},
+results = collection.aggregate([
+    { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 } }},
     { "$group": {
-        "_id": { "region": "$locality", "year": { "$year": "$eventDate" }},
-        "distinctSpecies": { "$addToSet": "$scientificName" }
+        "_id": {
+            "depthBand": { "$switch": {
+                "branches": [
+                    { "case": { "$lt": ["$minimumDepthInMeters", 10] }, "then": "Shallow (0-10m)" },
+                    { "case": { "$lt": ["$minimumDepthInMeters", 20] }, "then": "Mid (10-20m)" }
+                ],
+                "default": "Deep (20m+)"
+            }},
+            "year": { "$year": "$eventDate" }
+        },
+        "totalAbundance": { "$sum": "$organismQuantity" }
     }},
-    { "$project": {
-        "region": "$_id.region",
-        "year":   "$_id.year",
-        "speciesCount": { "$size": "$distinctSpecies" }
-    }},
-    { "$sort": { "year": 1 }}
+    { "$sort": { "_id.year": 1 }}
 ])
 
-df_q2 = pd.DataFrame(list(q2))
-df_q2["region"] = df_q2["_id"].apply(lambda x: x["region"])
-df_q2["year"]   = df_q2["_id"].apply(lambda x: x["year"])
-df_q2 = df_q2[df_q2["year"] <= 2023]
+df = pd.DataFrame(results)
+df["year"]      = df["_id"].apply(lambda x: x["year"])
+df["depthBand"] = df["_id"].apply(lambda x: x["depthBand"])
+df = df[df["year"] != 2024]
 
-region_colors = {
-    "Florida Keys, Florida":                          "#2ecc71",
-    "Southeast Florida":                              "#27ae60",
-    "Dry Tortugas, Florida":                          "#16a085",
-    "Puerto Rico":                                    "#8e44ad",
-    "St. Croix, US Virgin Islands":                   "#c0392b",
-    "St. Thomas and St. John, US Virgin Islands":     "#e67e22",
-    "Flower Garden Banks, Gulf of Mexico":            "steelblue",
+colors_depth = {
+    "Shallow (0-10m)": "#28b038",
+    "Mid (10-20m)":    "#4f99d5",
+    "Deep (20m+)":     "#2e4057"
 }
 
 plt.figure(figsize=(11, 5))
-for region, grp in df_q2.groupby("region"):
-    grp   = grp.sort_values("year")
-    label = short.get(region, region)
-    plt.plot(grp["year"], grp["speciesCount"], marker="o", linewidth=2,
-             label=label, color=region_colors.get(region, "grey"))
+for band, color in colors_depth.items():
+    subset = df[df["depthBand"] == band].sort_values("year")
+    plt.plot(subset["year"], subset["totalAbundance"], marker="o", label=band, color=color, linewidth=2)
 
-plt.title("Distinct Coral Species per Region Over Time", fontsize=13)
+plt.title("Coral Abundance by Depth Band Over Time", fontsize=13)
 plt.xlabel("Year")
-plt.ylabel("Number of Distinct Species")
-plt.xticks(range(2013, 2024))
-plt.legend(fontsize=8, loc="lower left")
+plt.ylabel("Total Abundance")
+plt.legend()
+plt.xticks(sorted(df["year"].unique()))
 plt.grid(axis="y", linestyle="--", alpha=0.5)
 plt.tight_layout()
-plt.savefig("q2_richness_by_region.png")
+plt.savefig("q7_depth_over_time.png")
 plt.show()
-print("Saved: q2_richness_by_region.png")
+print("Saved: q7_depth_over_time.png")
+
 
 client.close()

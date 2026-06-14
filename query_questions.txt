@@ -105,7 +105,7 @@ Disclaimers:
   - Florida Keys actually gained 7 species — suggesting recovery or improved survey coverage
   - Flower Garden Banks last survey is 2024 which is incomplete, so change: 0 may not be accurate
 
-4. Species that disappeared — species present in 2013-2015 but absent by 2022-2024
+4. Recovery Mismatch Index — for each reef region, did abundance and species richness both increase (true recovery), or did abundance rise while species richness fell (false recovery / ecological simplification)?
 
 5. Absence rate over time — what percentage of observations were recorded as "absent" per region per year, and is that percentage increasing?
 
