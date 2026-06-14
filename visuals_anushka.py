@@ -151,4 +151,43 @@ plt.show()
 print("Saved: q7_depth_over_time.png")
 
 
+# Q6 (Geographic): Are corals found in fewer locations over time?
+
+results = collection.aggregate([
+    { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 } }},
+    { "$group": {
+        "_id": { "$year": "$eventDate" },
+        "uniqueLocations": { "$addToSet": {
+            "lat": { "$round": ["$decimalLatitude", 1] },
+            "lng": { "$round": ["$decimalLongitude", 1] }
+        }}
+    }},
+    { "$project": {
+        "year":          "$_id",
+        "locationCount": { "$size": "$uniqueLocations" }
+    }},
+    { "$sort": { "year": 1 }}
+])
+
+df = pd.DataFrame(results)
+df = df[~df["year"].isin([2020, 2024])]
+
+# red bars for bleaching years, blue for others
+colors = ["#d62728" if 2014 <= y <= 2017 else "#4682b4" for y in df["year"]]
+
+fig, ax = plt.subplots(figsize=(11, 5))
+ax.bar(df["year"], df["locationCount"], color=colors)
+ax.set_title("Are Coral Populations Shrinking Geographically Over Time?", fontsize=13, fontweight="bold")
+ax.set_xlabel("Year")
+ax.set_ylabel("Number of Unique Survey Locations With Coral Present")
+ax.set_xticks(df["year"])
+ax.tick_params(axis="x", rotation=45)
+ax.axvspan(2013.5, 2017.5, color="coral", alpha=0.15, label="Bleaching Event (2014–2017)")
+ax.legend(fontsize=9)
+plt.tight_layout()
+plt.savefig("q6_geographic_fragmentation.png")
+plt.show()
+print("Saved: q6_geographic_fragmentation.png")
+
+
 client.close()

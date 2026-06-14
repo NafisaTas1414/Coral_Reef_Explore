@@ -38,60 +38,21 @@ losers  = pd.DataFrame(get_species_change(sort_order=1))
 fig, (ax_left, ax_right) = plt.subplots(1, 2, figsize=(16, 7))
 
 ax_left.barh(winners["species"], winners["change"], color="#2ca02c")
-ax_left.set_title("Coral Species on the Rise\n(Top 10 Growing Species)", fontsize=12)
+ax_left.set_title("Top 10 Growing Species", fontsize=12)
 ax_left.set_xlabel("Increase in Individual Corals Counted")
 ax_left.invert_yaxis()
 
 ax_right.barh(losers["species"], losers["change"], color="#d62728")
-ax_right.set_title("Coral Species in Decline\n(Top 10 Shrinking Species)", fontsize=12)
+ax_right.set_title("Top 10 Shrinking Species", fontsize=12)
 ax_right.set_xlabel("Decrease in Individual Corals Counted")
 ax_right.invert_yaxis()
 
-fig.suptitle("Which Coral Species Are Thriving and Which Are Disappearing? (First vs Most Recent Survey)",
+fig.suptitle("Growing vs Declining Coral Species (First vs Most Recent Survey)",
              fontsize=13, fontweight="bold")
 plt.tight_layout()
-plt.savefig("q1_winners_vs_losers.png")
+plt.savefig("q1_growing_vs_decreasing_corals.png")
 plt.show()
 print("Saved: q1_winners_vs_losers.png")
-
-
-# Q6 (Geographic): Are corals found in fewer locations over time?
-
-results = collection.aggregate([
-    { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 } }},
-    { "$group": {
-        "_id": { "$year": "$eventDate" },
-        "uniqueLocations": { "$addToSet": {
-            "lat": { "$round": ["$decimalLatitude", 1] },
-            "lng": { "$round": ["$decimalLongitude", 1] }
-        }}
-    }},
-    { "$project": {
-        "year":          "$_id",
-        "locationCount": { "$size": "$uniqueLocations" }
-    }},
-    { "$sort": { "year": 1 }}
-])
-
-df = pd.DataFrame(results)
-df = df[~df["year"].isin([2020, 2024])]
-
-# red bars for bleaching years, blue for others
-colors = ["#d62728" if 2014 <= y <= 2017 else "#4682b4" for y in df["year"]]
-
-fig, ax = plt.subplots(figsize=(11, 5))
-ax.bar(df["year"], df["locationCount"], color=colors)
-ax.set_title("Are Coral Populations Shrinking Geographically Over Time?", fontsize=13, fontweight="bold")
-ax.set_xlabel("Year")
-ax.set_ylabel("Number of Unique Survey Locations With Coral Present")
-ax.set_xticks(df["year"])
-ax.tick_params(axis="x", rotation=45)
-ax.axvspan(2013.5, 2017.5, color="coral", alpha=0.15, label="Bleaching Event (2014–2017)")
-ax.legend(fontsize=9)
-plt.tight_layout()
-plt.savefig("q6_geographic_fragmentation.png")
-plt.show()
-print("Saved: q6_geographic_fragmentation.png")
 
 
 # Q3: Species change by region (first vs most recent survey)
