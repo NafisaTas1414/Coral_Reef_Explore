@@ -38,7 +38,8 @@ if "absent" not in pivot.columns:
 if "present" not in pivot.columns:
     pivot["present"] = 0
 pivot["absence_pct"] = (pivot["absent"] / (pivot["absent"] + pivot["present"]) * 100).round(1)
-pivot = pivot[pivot["year"] <= 2023]
+# exclude 2024 (incomplete) and 2020 (COVID reduced surveys distort absence rate)
+pivot = pivot[(pivot["year"] <= 2023) & (pivot["year"] != 2020)]
 pivot["region_short"] = pivot["region"].map(short).fillna(pivot["region"])
 
 region_order  = list(short.values())
@@ -56,7 +57,7 @@ for region in region_order:
 plt.title("Absence Rate (%) by Region Over Time", fontsize=13)
 plt.xlabel("Year")
 plt.ylabel("% Observations Recorded as Absent")
-plt.xticks(range(2013, 2024))
+plt.xticks([y for y in range(2013, 2024) if y != 2020])
 plt.legend(fontsize=8, loc="upper left")
 plt.grid(axis="y", linestyle="--", alpha=0.5)
 plt.tight_layout()
@@ -107,7 +108,9 @@ print("Saved: q8_recovery_signals.png")
 # Q7: Coral abundance by depth band over time
 
 results = collection.aggregate([
-    { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 } }},
+    # filter out records with no depth recorded — they would wrongly default to "Deep (20m+)"
+    { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 },
+                  "minimumDepthInMeters": { "$ne": None } }},
     { "$group": {
         "_id": {
             "depthBand": { "$switch": {

@@ -3,8 +3,7 @@ How have coral species richness and abundance changed across US
 reef regions from 2013 to 2024, and what do these trends reveal 
 about the long-term impact of climate-driven stressors on reef ecosystems?
 
-change the questions for the queries as u like anushka, I just put some down but change
-as needed!
+This file is to show example of the mangodb queries of what we input and what we got as output
 
 1. Which coral species are winners vs losers — which grew in abundance and which declined the most? (Nafisa)
 
@@ -46,12 +45,6 @@ Output (Top 10 Winners):
   { species: 'Agaricia grahamae',      firstAbundance:   28, lastAbundance:  56, change:  +28 }
   { species: 'Madracis formosa',       firstAbundance:    4, lastAbundance:  28, change:  +24 }
   { species: 'Porites branneri',       firstAbundance:    2, lastAbundance:  22, change:  +20 }
-
-Disclaimers:
-  - Winners are species whose total abundance increased between first and last survey year
-  - Small starting abundances can produce large % gains — context matters
-  - Acropora cervicornis appearing as a winner is notable as it is a critically endangered species
- 
 
 
 3. Steepest decline by region — compare each region's first survey vs most recent survey (Nafisa)
@@ -99,107 +92,8 @@ Output:
   { region: 'Southeast Florida',                         firstYear: 2014, firstCount: 24, lastYear: 2022, lastCount: 26, change: +2 }
   { region: 'Florida Keys, Florida',                     firstYear: 2014, firstCount: 34, lastYear: 2022, lastCount: 41, change: +7 }
 
-Disclaimers:
-  - Each region is compared on its own first vs last survey year, not the same calendar years
-  - St. Croix saw the steepest decline (-6 species), followed by Puerto Rico and Dry Tortugas (-3 each)
-  - Florida Keys actually gained 7 species — suggesting recovery or improved survey coverage
-  - Flower Garden Banks last survey is 2024 which is incomplete, so change: 0 may not be accurate
 
-4. Recovery Mismatch Index — for each reef region, did abundance and species richness both increase (true recovery), or did abundance rise while species richness fell (false recovery / ecological simplification)?
-
-5. Absence rate over time — what percentage of observations were recorded as "absent" per region per year, and is that percentage increasing?
-
-6. Most at-risk species — which species showed the greatest drop in total abundance (organismQuantity) between the first and last survey years? (Nafisa)
-
-Input:
-
-db.occurrences.aggregate([
-  { $match: { occurrenceStatus: "present", organismQuantity: { $gt: 0 } }},
-  // Sum total abundance per species per year
-  { $group: {
-      _id: { species: "$scientificName", year: { $year: "$eventDate" } },
-      totalAbundance: { $sum: "$organismQuantity" }
-  }},
-  { $sort: { "_id.year": 1 }},
-  // Get first and last year totals per species
-  { $group: {
-      _id: "$_id.species",
-      firstYear: { $first: "$_id.year" },
-      firstAbundance: { $first: "$totalAbundance" },
-      lastYear: { $last: "$_id.year" },
-      lastAbundance: { $last: "$totalAbundance" }
-  }},
-  // Calculate the drop (negative = decline)
-  { $project: {
-      species: "$_id",
-      firstYear: 1, firstAbundance: 1,
-      lastYear: 1,  lastAbundance: 1,
-      change: { $subtract: ["$lastAbundance", "$firstAbundance"] }
-  }},
-  { $sort: { change: 1 }},
-  { $limit: 10 }
-])
-
-Output (top 10 most declined):
-
-  { species: 'Porites astreoides',      firstYear: 2013, firstAbundance: 2848, lastYear: 2024, lastAbundance:  660, change: -2188 }
-  { species: 'Siderastrea siderea',     firstYear: 2013, firstAbundance: 1603, lastYear: 2024, lastAbundance:   12, change: -1591 }
-  { species: 'Agaricia agaricites',     firstYear: 2013, firstAbundance: 1264, lastYear: 2024, lastAbundance:  154, change: -1110 }
-  { species: 'Orbicella faveolata',     firstYear: 2013, firstAbundance:  616, lastYear: 2024, lastAbundance:   59, change:  -557 }
-  { species: 'Orbicella franksi',       firstYear: 2013, firstAbundance:  782, lastYear: 2024, lastAbundance:  244, change:  -538 }
-  { species: 'Montastraea cavernosa',   firstYear: 2013, firstAbundance:  592, lastYear: 2024, lastAbundance:  107, change:  -485 }
-  { species: 'Porites porites',         firstYear: 2013, firstAbundance:  471, lastYear: 2024, lastAbundance:   19, change:  -452 }
-  { species: 'Orbicella annularis',     firstYear: 2013, firstAbundance:  298, lastYear: 2024, lastAbundance:    1, change:  -297 }
-  { species: 'Stephanocoenia intersepta',firstYear: 2013, firstAbundance: 296, lastYear: 2024, lastAbundance:   75, change:  -221 }
-  { species: 'Pseudodiploria strigosa', firstYear: 2013, firstAbundance:  413, lastYear: 2024, lastAbundance:  214, change:  -199 }
-
-Disclaimers:
-  - 2024 is an incomplete survey year — last year values for species may be understated
-  - Porites astreoides is the most at-risk with a drop of 2,188 individuals
-  - Orbicella annularis is near collapse because it is down from 298 to just 1 individual recorded
-
-7. Depth and decline — do coral observations at deeper depths show less decline than shallow water corals, suggesting shallow reefs are more affected? (Nafisa)
-
-db.occurrences.aggregate([
-  { $match: { occurrenceStatus: "present", organismQuantity: { $gt: 0 } }},
-  { $group: {
-      _id: {
-        depthBand: {
-          $switch: {
-            branches: [
-              { case: { $lt: ["$minimumDepthInMeters", 10] }, then: "Shallow (0-10m)" },
-              { case: { $lt: ["$minimumDepthInMeters", 20] }, then: "Mid (10-20m)" }
-            ], default: "Deep (20m+)"}},
-        year: { $year: "$eventDate" }},
-      totalAbundance: { $sum: "$organismQuantity" }}},
-  { $sort: { "_id.year": 1, "_id.depthBand": 1 } }
-])
-
-output:
-
- { _id: { depthBand: 'Deep (20m+)', year: 2013 }, totalAbundance: 3462 },
-  {
-    _id: { depthBand: 'Mid (10-20m)', year: 2013 },
-    totalAbundance: 3420
-  },
-  {
-    _id: { depthBand: 'Shallow (0-10m)', year: 2013 },
-    totalAbundance: 3566
-  },
-  { _id: { depthBand: 'Deep (20m+)', year: 2014 }, totalAbundance: 2614 },
-  {
-    _id: { depthBand: 'Mid (10-20m)', year: 2014 },
-    totalAbundance: 5475
-  },
-  {
-    _id: { depthBand: 'Shallow (0-10m)', year: 2014 },
-    totalAbundance: 10060
-  }...
-
-
-8. Recovery signals — are there any regions or species that show an increase in abundance after a period of decline, suggesting signs of reef recovery?
-
-9. Impact of the 3rd Global Coral Bleaching Event (2014-2017) — did species richness and total abundance drop during the bleaching period compared to before and after? (Nafisa)
+9. Impact of the 3rd Global Coral Bleaching Event (2014-2017) — did species richness and total abundance drop during the bleaching period compared to before and after? 
 
 Context: NOAA confirmed the Third Global Bleaching Event ran from 2014-2017, driven by rising ocean temperatures. This was the longest and most widespread bleaching event on record at the time.
 
@@ -237,7 +131,3 @@ Output:
   { year: 2018, speciesCount: 43, totalAbundance: 12193 }   post-bleaching
   { year: 2019, speciesCount: 49, totalAbundance: 20899 }  ←partial recovery
 
-Disclaimers:
-  - Not all regions are surveyed every year so raw numbers vary
-  - 2016 shows the clearest drop in both species count and abundance during the bleaching window
-  - Abundance in 2018 is lower than baseline 2013 — suggesting incomplete recovery

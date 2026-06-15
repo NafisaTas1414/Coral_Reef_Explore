@@ -2,3 +2,6 @@ occurrence.txt
 *.zip
 eml.xml
 meta.xml
+.DS_Store
+.idea/
+.venv/

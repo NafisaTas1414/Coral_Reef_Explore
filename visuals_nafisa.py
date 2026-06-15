@@ -9,10 +9,13 @@ collection = client["coral_reef"]["occurrences"]
 
 
 # Q1: Species Winners vs Losers
+# compares each species' total abundance in its first survey year vs most recent
 
 def get_species_change(sort_order, limit=10):
+    # excludes 2024 since surveys were incomplete that year
     return list(collection.aggregate([
-        { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 } }},
+        { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 },
+                      "eventDate": { "$lt": datetime(2024, 1, 1) } }},
         { "$group": {
             "_id": { "species": "$scientificName", "year": { "$year": "$eventDate" } },
             "totalAbundance": { "$sum": "$organismQuantity" }
@@ -23,15 +26,13 @@ def get_species_change(sort_order, limit=10):
             "firstAbundance": { "$first": "$totalAbundance" },
             "lastAbundance":  { "$last":  "$totalAbundance" }
         }},
-        { "$project": {
-            "species": "$_id",
-            "firstAbundance": 1, "lastAbundance": 1,
-            "change": { "$subtract": ["$lastAbundance", "$firstAbundance"] }
-        }},
+        { "$project": {"species": "$_id", "firstAbundance": 1, "lastAbundance": 1,
+            "change": { "$subtract": ["$lastAbundance", "$firstAbundance"] }}},
         { "$sort": { "change": sort_order }},
         { "$limit": limit }
     ]))
 
+# sort_order=-1 gets biggest gainers, 1 gets biggest losers
 winners = pd.DataFrame(get_species_change(sort_order=-1))
 losers  = pd.DataFrame(get_species_change(sort_order=1))
 
@@ -52,25 +53,27 @@ fig.suptitle("Growing vs Declining Coral Species (First vs Most Recent Survey)",
 plt.tight_layout()
 plt.savefig("q1_growing_vs_decreasing_corals.png")
 plt.show()
-print("Saved: q1_winners_vs_losers.png")
+print("Saved: q1_growing_vs_decreasing_corals.png")
 
 
-# Q3: Species change by region (first vs most recent survey)
+# Q3: Species richness change by region (first vs most recent survey)
+# negative change = fewer species recorded, positive = more species observed
 
 results = collection.aggregate([
-    { "$match": { "occurrenceStatus": "present" }},
+    # exclude 2024 so Flower Garden Banks (last surveyed 2024) isn't compared on an incomplete year
+    { "$match": { "occurrenceStatus": "present",
+                  "eventDate": { "$lt": datetime(2024, 1, 1) } }},
     { "$group": {
         "_id": { "region": "$locality", "year": { "$year": "$eventDate" } },
         "distinctSpecies": { "$addToSet": "$scientificName" }
     }},
-    { "$project": {
-        "region":       "$_id.region",
-        "year":         "$_id.year",
+    { "$project": { "region":  "$_id.region",
+        "year":  "$_id.year",
         "speciesCount": { "$size": "$distinctSpecies" }
     }},
     { "$sort": { "year": 1 }},
     { "$group": {
-        "_id":        "$region",
+        "_id":  "$region",
         "firstCount": { "$first": "$speciesCount" },
         "lastCount":  { "$last":  "$speciesCount" }
     }},
@@ -83,6 +86,7 @@ results = collection.aggregate([
 
 df = pd.DataFrame(results)
 df["region"] = df["region"].str.replace(", ", "\n")
+# red = decline, green = gain, blue = no change
 colors = ["#8a1c1c" if c < 0 else "#0d8b0d" if c > 0 else "#385d8c" for c in df["change"]]
 
 plt.figure(figsize=(11, 6))
@@ -97,15 +101,16 @@ print("Saved: q3_decline_by_region.png")
 
 
 # Heatmap: species richness by region and year
+# blank cells = region not surveyed that year
 
 short = {
-    "Florida Keys, Florida":                          "Florida Keys",
-    "Southeast Florida":                              "SE Florida",
-    "Dry Tortugas, Florida":                          "Dry Tortugas",
-    "Puerto Rico":                                    "Puerto Rico",
-    "St. Croix, US Virgin Islands":                   "St. Croix (USVI)",
-    "St. Thomas and St. John, US Virgin Islands":     "St. Thomas/John (USVI)",
-    "Flower Garden Banks, Gulf of Mexico":            "Flower Garden Banks",
+    "Florida Keys, Florida":  "Florida Keys",
+    "Southeast Florida":  "SE Florida",
+    "Dry Tortugas, Florida": "Dry Tortugas",
+    "Puerto Rico":   "Puerto Rico",
+    "St. Croix, US Virgin Islands":  "St. Croix (USVI)",
+    "St. Thomas and St. John, US Virgin Islands":   "St. Thomas/John (USVI)",
+    "Flower Garden Banks, Gulf of Mexico":  "Flower Garden Banks",
 }
 
 results = collection.aggregate([
@@ -125,6 +130,8 @@ results = collection.aggregate([
 df = pd.DataFrame(results)
 df["region"] = df["_id"].apply(lambda x: x["region"])
 df["year"]   = df["_id"].apply(lambda x: x["year"])
+
+# exclude 2020 (COVID) and 2024 (incomplete)
 df = df[~df["year"].isin([2020, 2024])]
 df["region_short"] = df["region"].map(short).fillna(df["region"])
 
@@ -161,6 +168,8 @@ print("Saved: q5_richness_heatmap.png")
 
 
 # Q4: Recovery Mismatch Index
+# plots each region on two axes: abundance change (x) vs species richness change (y)
+# quadrant position reveals whether recovery is genuine or misleading
 
 results = collection.aggregate([
     { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 }}},
@@ -169,12 +178,8 @@ results = collection.aggregate([
         "totalAbundance":  { "$sum": "$organismQuantity" },
         "distinctSpecies": { "$addToSet": "$scientificName" }
     }},
-    { "$project": {
-        "region":         "$_id.region",
-        "year":           "$_id.year",
-        "totalAbundance": 1,
-        "speciesCount":   { "$size": "$distinctSpecies" }
-    }},
+    { "$project": {"region": "$_id.region", "year":  "$_id.year",
+        "totalAbundance": 1, "speciesCount":   { "$size": "$distinctSpecies" }}},
     { "$sort": { "year": 1 }}
 ])
 
@@ -197,6 +202,7 @@ df["abChange"]       = df["lastAb"]       - df["firstAb"]
 df["richnessChange"] = df["lastRichness"]  - df["firstRichness"]
 
 def get_category(row):
+    # assigns each region to one of four quadrants based on direction of change
     if row["abChange"] >= 0 and row["richnessChange"] >= 0:
         return "Strong Recovery"
     elif row["abChange"] >= 0 and row["richnessChange"] < 0:
@@ -209,30 +215,39 @@ def get_category(row):
 df["category"]     = df.apply(get_category, axis=1)
 df["region_short"] = df["region"].map(short).fillna(df["region"])
 
-cat_colors = {
-    "Strong Recovery": "#006400",
-    "False Recovery":  "#8B0000",
-    "Diversity Shift": "#003366",
-    "Overall Decline": "#4A4A4A",
+cat_colors = {"Strong Recovery": "#006400", "False Recovery":  "#8B0000",
+    "Diversity Shift": "#003366", "Overall Decline": "#4A4A4A", }
+
+# manual offsets so region labels don't overlap near the center
+label_offsets = {
+    "Florida Keys": (8, 6),
+    "Dry Tortugas":(8, 5),
+    "SE Florida":(10, -10),
+    "Flower Garden Banks":(10,  8),
+    "St. Thomas/John (USVI)": (8, 5),
+    "Puerto Rico":(8, 5),
+    "St. Croix (USVI)":(8,  -2),
 }
 
-fig, ax = plt.subplots(figsize=(12, 7))
+fig, ax = plt.subplots(figsize=(13, 7))
 
 for cat, color in cat_colors.items():
     subset = df[df["category"] == cat]
     if subset.empty:
         continue
     ax.scatter(subset["abChange"], subset["richnessChange"],
-               color=color, s=150, label=cat, edgecolors="black", linewidths=0.8)
+               color=color, s=180, label=cat, edgecolors="black", linewidths=0.8, alpha=0.9)
     for _, row in subset.iterrows():
+        offset = label_offsets.get(row["region_short"], (8, 5))
         ax.annotate(row["region_short"],
                     (row["abChange"], row["richnessChange"]),
-                    textcoords="offset points", xytext=(8, 5), fontsize=9)
+                    textcoords="offset points", xytext=offset, fontsize=8.5)
 
+# dividing lines that split the chart into the four quadrants
 ax.axvline(0, color="black", linewidth=1, linestyle="--")
 ax.axhline(0, color="black", linewidth=1, linestyle="--")
 
-# quadrant labels in each corner
+# quadrant labels in each corner using axis-relative coordinates
 ax.text(0.78, 0.95, "Strong Recovery", transform=ax.transAxes, color="#006400", fontsize=9, alpha=0.8, va="top")
 ax.text(0.78, 0.05, "False Recovery",  transform=ax.transAxes, color="#8B0000", fontsize=9, alpha=0.8, va="bottom")
 ax.text(0.03, 0.95, "Diversity Shift", transform=ax.transAxes, color="#003366", fontsize=9, alpha=0.8, va="top")
@@ -242,62 +257,18 @@ ax.set_title("Recovery Mismatch Index: Abundance Change vs Species Richness Chan
              fontsize=13, fontweight="bold")
 ax.set_xlabel("Change in Total Coral Abundance")
 ax.set_ylabel("Change in Distinct Species Count")
-ax.legend(title="Recovery Category", fontsize=9)
+ax.legend(title="Recovery Category", fontsize=9, bbox_to_anchor=(1.02, 1), loc="upper left")
 ax.grid(True, linestyle="--", alpha=0.4)
+ax.margins(0.2)
+
 plt.tight_layout()
-plt.savefig("q4_recovery_mismatch.png")
+plt.savefig("q4_recovery_mismatch.png", bbox_inches="tight")
 plt.show()
 print("Saved: q4_recovery_mismatch.png")
 
-print("\nRecovery Mismatch Summary")
-for _, row in df.sort_values("category").iterrows():
-    print(f"{row['region_short']}: abundance change={int(row['abChange'])}, "
-          f"richness change={int(row['richnessChange'])}, category={row['category']}")
-
-
-# Q6 (Species): Top 10 most declined species
-
-results = collection.aggregate([
-    { "$match": { "occurrenceStatus": "present", "organismQuantity": { "$gt": 0 } }},
-    { "$group": {
-        "_id": { "species": "$scientificName", "year": { "$year": "$eventDate" } },
-        "totalAbundance": { "$sum": "$organismQuantity" }
-    }},
-    { "$sort": { "_id.year": 1 }},
-    { "$group": {
-        "_id":            "$_id.species",
-        "firstAbundance": { "$first": "$totalAbundance" },
-        "lastAbundance":  { "$last":  "$totalAbundance" }
-    }},
-    { "$project": {
-        "species":        "$_id",
-        "firstAbundance": 1, "lastAbundance": 1,
-        "change":         { "$subtract": ["$lastAbundance", "$firstAbundance"] }
-    }},
-    { "$sort": { "change": 1 }},
-    { "$limit": 10 }
-])
-
-df = pd.DataFrame(results)
-# y positions for each species, offset slightly so bars sit side by side
-y = np.arange(len(df))
-bar_height = 0.35
-
-fig, ax = plt.subplots(figsize=(12, 7))
-ax.barh(y + bar_height / 2, df["firstAbundance"], bar_height, label="First Survey Year", color="skyblue")
-ax.barh(y - bar_height / 2, df["lastAbundance"],  bar_height, label="Last Survey Year",  color="salmon")
-ax.set_yticks(y)
-ax.set_yticklabels(df["species"], fontstyle="italic")
-ax.set_xlabel("Total Abundance (Individual Corals Counted)")
-ax.set_title("Top 10 Most Declined Species: First vs Most Recent Survey", fontsize=13)
-ax.legend()
-plt.tight_layout()
-plt.savefig("q6_most_at_risk_species.png")
-plt.show()
-print("Saved: q6_most_at_risk_species.png")
-
 
 # Q9: 3rd Global Coral Bleaching Event (2014–2017)
+# dual y-axis: species richness (left) and total abundance (right) over 2013–2019
 
 results = collection.aggregate([
     { "$match": {
@@ -305,12 +276,12 @@ results = collection.aggregate([
         "eventDate": { "$gte": datetime(2013, 1, 1), "$lte": datetime(2019, 12, 31) }
     }},
     { "$group": {
-        "_id":              { "$year": "$eventDate" },
+        "_id":  { "$year": "$eventDate" },
         "distinctSpecies":  { "$addToSet": "$scientificName" },
         "totalAbundance":   { "$sum": "$organismQuantity" }
     }},
     { "$project": {
-        "year":         "$_id",
+        "year": "$_id",
         "speciesCount": { "$size": "$distinctSpecies" },
         "totalAbundance": 1
     }},
@@ -333,6 +304,7 @@ ax2.plot(df["year"], df["totalAbundance"], marker="s", color="steelblue", linewi
 ax2.set_ylabel("Total Coral Abundance", color="steelblue")
 ax2.tick_params(axis="y", labelcolor="steelblue")
 
+# merge legends from both axes into one
 lines1, labels1 = ax1.get_legend_handles_labels()
 lines2, labels2 = ax2.get_legend_handles_labels()
 ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
