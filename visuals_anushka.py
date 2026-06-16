@@ -1,3 +1,7 @@
+# HW 5: NoSQL R&D Project (GROUP PROJECT)
+# BY: Anushka
+# Date: 6/10/2026
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
